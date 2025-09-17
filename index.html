@@ -130,13 +130,21 @@
         drawRunningCourseWithDirections(courseData);
 
         function getCourseData() {
+            // 디버깅 정보 출력
+            console.log('현재 URL:', window.location.href);
+            console.log('URL 검색 파라미터:', window.location.search);
+            
             // 먼저 URL 파라미터 확인
             const urlData = getUrlParams();
+            console.log('URL에서 파싱한 데이터:', urlData);
+            
             if (urlData && urlData.start_point) {
+                console.log('URL 데이터 사용');
                 return urlData;
             }
             
             // URL 파라미터가 없으면 기본 데이터 사용
+            console.log('기본 데이터 사용');
             return getDefaultData();
         }
 
@@ -172,7 +180,10 @@
         async function drawRunningCourseWithDirections(data) {
             const bounds = new kakao.maps.LatLngBounds();
             
-            // 마커들 먼저 표시
+            // 먼저 정보 업데이트 (즉시 표시)
+            updateCourseInfo(data);
+            
+            // 마커들 표시
             drawMarkers(data, bounds);
             
             // 실제 도보 경로 그리기
@@ -180,9 +191,6 @@
             
             // 지도 범위 설정
             map.setBounds(bounds);
-            
-            // UI 업데이트
-            updateCourseInfo(data);
         }
 
         function drawMarkers(data, bounds) {
@@ -337,86 +345,126 @@
         function createMarkerImage(type, number) {
             let imageSrc, imageSize, imageOption;
             
+            // btoa 오류 해결: 한글 없는 간단한 마커 사용
             switch(type) {
                 case 'start':
-                    imageSrc = 'data:image/svg+xml;base64,' + btoa(`
-                        <svg xmlns="http://www.w3.org/2000/svg" width="30" height="40" viewBox="0 0 30 40">
-                            <path d="M15 0C6.7 0 0 6.7 0 15s6.7 15 15 15 15-6.7 15-15S23.3 0 15 0z" fill="#28a745"/>
-                            <text x="15" y="20" text-anchor="middle" fill="white" font-size="16" font-weight="bold">🏁</text>
+                    // 녹색 원형 마커
+                    imageSrc = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(`
+                        <svg xmlns="http://www.w3.org/2000/svg" width="30" height="30" viewBox="0 0 30 30">
+                            <circle cx="15" cy="15" r="12" fill="#28a745" stroke="white" stroke-width="2"/>
+                            <circle cx="15" cy="15" r="4" fill="white"/>
                         </svg>
                     `);
+                    imageSize = new kakao.maps.Size(30, 30);
+                    imageOption = { offset: new kakao.maps.Point(15, 15) };
                     break;
                 case 'end':
-                    imageSrc = 'data:image/svg+xml;base64,' + btoa(`
-                        <svg xmlns="http://www.w3.org/2000/svg" width="30" height="40" viewBox="0 0 30 40">
-                            <path d="M15 0C6.7 0 0 6.7 0 15s6.7 15 15 15 15-6.7 15-15S23.3 0 15 0z" fill="#dc3545"/>
-                            <text x="15" y="20" text-anchor="middle" fill="white" font-size="16" font-weight="bold">🏆</text>
+                    // 빨간색 원형 마커
+                    imageSrc = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(`
+                        <svg xmlns="http://www.w3.org/2000/svg" width="30" height="30" viewBox="0 0 30 30">
+                            <circle cx="15" cy="15" r="12" fill="#dc3545" stroke="white" stroke-width="2"/>
+                            <circle cx="15" cy="15" r="4" fill="white"/>
                         </svg>
                     `);
+                    imageSize = new kakao.maps.Size(30, 30);
+                    imageOption = { offset: new kakao.maps.Point(15, 15) };
                     break;
                 case 'waypoint':
-                    imageSrc = 'data:image/svg+xml;base64,' + btoa(`
-                        <svg xmlns="http://www.w3.org/2000/svg" width="25" height="35" viewBox="0 0 25 35">
-                            <path d="M12.5 0C5.6 0 0 5.6 0 12.5s5.6 12.5 12.5 12.5 12.5-5.6 12.5-12.5S19.4 0 12.5 0z" fill="#007bff"/>
+                    // 파란색 숫자 마커
+                    imageSrc = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(`
+                        <svg xmlns="http://www.w3.org/2000/svg" width="25" height="25" viewBox="0 0 25 25">
+                            <circle cx="12.5" cy="12.5" r="10" fill="#007bff" stroke="white" stroke-width="2"/>
                             <text x="12.5" y="17" text-anchor="middle" fill="white" font-size="12" font-weight="bold">${number}</text>
                         </svg>
                     `);
+                    imageSize = new kakao.maps.Size(25, 25);
+                    imageOption = { offset: new kakao.maps.Point(12.5, 12.5) };
                     break;
                 default:
                     return null;
             }
             
-            imageSize = new kakao.maps.Size(30, 40);
-            imageOption = { offset: new kakao.maps.Point(15, 40) };
-            
             return new kakao.maps.MarkerImage(imageSrc, imageSize, imageOption);
         }
 
         function updateCourseInfo(data) {
+            console.log('updateCourseInfo 호출됨, 데이터:', data);
+            
             // 안전한 데이터 접근
             const totalDistance = data.total_distance || data.distance || '정보 없음';
             const waypointCount = (data.waypoints && Array.isArray(data.waypoints)) ? data.waypoints.length : 0;
             
-            document.getElementById('totalDistance').textContent = totalDistance;
-            document.getElementById('estimatedTime').textContent = calculateEstimatedTime(totalDistance);
-            document.getElementById('waypointCount').textContent = waypointCount + '개';
+            console.log('총 거리:', totalDistance);
+            console.log('경유지 수:', waypointCount);
+            
+            // DOM 요소들이 존재하는지 확인
+            const distanceEl = document.getElementById('totalDistance');
+            const timeEl = document.getElementById('estimatedTime');
+            const countEl = document.getElementById('waypointCount');
+            
+            if (distanceEl) {
+                distanceEl.textContent = totalDistance;
+                console.log('거리 업데이트 완료');
+            } else {
+                console.error('totalDistance 요소를 찾을 수 없음');
+            }
+            
+            if (timeEl) {
+                timeEl.textContent = calculateEstimatedTime(totalDistance);
+                console.log('시간 업데이트 완료');
+            } else {
+                console.error('estimatedTime 요소를 찾을 수 없음');
+            }
+            
+            if (countEl) {
+                countEl.textContent = waypointCount + '개';
+                console.log('경유지 수 업데이트 완료');
+            } else {
+                console.error('waypointCount 요소를 찾을 수 없음');
+            }
 
             // 경유지 목록 표시
             const waypointList = document.getElementById('waypointList');
-            waypointList.innerHTML = '';
+            if (waypointList) {
+                waypointList.innerHTML = '';
 
-            // 출발지
-            if (data.start_point && data.start_point.name) {
-                const startDiv = document.createElement('div');
-                startDiv.className = 'waypoint-item start-point';
-                startDiv.textContent = `🏁 ${data.start_point.name}`;
-                waypointList.appendChild(startDiv);
-            }
+                // 출발지
+                if (data.start_point && data.start_point.name) {
+                    const startDiv = document.createElement('div');
+                    startDiv.className = 'waypoint-item start-point';
+                    startDiv.textContent = `🏁 ${data.start_point.name}`;
+                    waypointList.appendChild(startDiv);
+                }
 
-            // 경유지들
-            if (data.waypoints && Array.isArray(data.waypoints) && data.waypoints.length > 0) {
-                data.waypoints.forEach((waypoint, index) => {
-                    if (waypoint && waypoint.name) {
-                        const waypointDiv = document.createElement('div');
-                        waypointDiv.className = 'waypoint-item waypoint';
-                        waypointDiv.textContent = `📍 ${waypoint.name}`;
-                        waypointList.appendChild(waypointDiv);
-                    }
-                });
-            }
+                // 경유지들
+                if (data.waypoints && Array.isArray(data.waypoints) && data.waypoints.length > 0) {
+                    data.waypoints.forEach((waypoint, index) => {
+                        if (waypoint && waypoint.name) {
+                            const waypointDiv = document.createElement('div');
+                            waypointDiv.className = 'waypoint-item waypoint';
+                            waypointDiv.textContent = `📍 ${waypoint.name}`;
+                            waypointList.appendChild(waypointDiv);
+                        }
+                    });
+                }
 
-            // 도착지
-            if (data.end_point && data.end_point.name) {
-                const endDiv = document.createElement('div');
-                endDiv.className = 'waypoint-item end-point';
-                endDiv.textContent = `🏆 ${data.end_point.name}`;
-                waypointList.appendChild(endDiv);
+                // 도착지
+                if (data.end_point && data.end_point.name) {
+                    const endDiv = document.createElement('div');
+                    endDiv.className = 'waypoint-item end-point';
+                    endDiv.textContent = `🏆 ${data.end_point.name}`;
+                    waypointList.appendChild(endDiv);
+                }
+                
+                console.log('경유지 목록 업데이트 완료');
             }
             
             // 코스 설명도 업데이트
             if (data.description) {
                 const header = document.querySelector('.header h1');
-                header.innerHTML = `🏃‍♂️ 러닝 코스<br><small style="font-size:14px;opacity:0.9;">${data.description}</small>`;
+                if (header) {
+                    header.innerHTML = `🏃‍♂️ 러닝 코스<br><small style="font-size:14px;opacity:0.9;">${data.description}</small>`;
+                }
             }
         }
 
@@ -451,24 +499,32 @@
             }
         }
 
-        // URL 파라미터로 데이터 받기 함수
         function getUrlParams() {
             try {
                 const urlParams = new URLSearchParams(window.location.search);
                 const courseData = urlParams.get('course');
-                console.log('URL 파라미터:', courseData);
+                
+                console.log('Raw URL 파라미터 (course):', courseData);
                 
                 if (courseData) {
-                    const parsedData = JSON.parse(decodeURIComponent(courseData));
-                    console.log('파싱된 데이터:', parsedData);
+                    const decodedData = decodeURIComponent(courseData);
+                    console.log('디코딩된 데이터:', decodedData);
+                    
+                    const parsedData = JSON.parse(decodedData);
+                    console.log('JSON 파싱 결과:', parsedData);
                     
                     // 데이터 유효성 검사
                     if (parsedData && parsedData.start_point && parsedData.end_point) {
+                        console.log('✅ 유효한 데이터입니다');
                         return parsedData;
+                    } else {
+                        console.log('❌ 필수 필드가 없습니다');
                     }
+                } else {
+                    console.log('❌ course 파라미터가 없습니다');
                 }
             } catch (e) {
-                console.error('코스 데이터 파싱 실패:', e);
+                console.error('❌ 파싱 실패:', e);
             }
             return null;
         }
