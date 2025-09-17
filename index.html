@@ -106,7 +106,12 @@
         
         try {
             courseData = getCourseData();
-            console.log('코스 데이터:', courseData);
+            console.log('로드된 코스 데이터:', courseData);
+            
+            // 데이터 무결성 검사
+            if (!courseData.start_point || !courseData.end_point) {
+                throw new Error('필수 데이터가 누락되었습니다.');
+            }
         } catch (error) {
             console.error('데이터 로드 실패:', error);
             alert('코스 데이터를 불러올 수 없습니다. 예시 데이터로 표시합니다.');
@@ -368,42 +373,82 @@
         }
 
         function updateCourseInfo(data) {
-            document.getElementById('totalDistance').textContent = data.total_distance || '계산 중...';
-            document.getElementById('estimatedTime').textContent = calculateEstimatedTime(data.total_distance);
-            document.getElementById('waypointCount').textContent = (data.waypoints ? data.waypoints.length : 0) + '개';
+            // 안전한 데이터 접근
+            const totalDistance = data.total_distance || data.distance || '정보 없음';
+            const waypointCount = (data.waypoints && Array.isArray(data.waypoints)) ? data.waypoints.length : 0;
+            
+            document.getElementById('totalDistance').textContent = totalDistance;
+            document.getElementById('estimatedTime').textContent = calculateEstimatedTime(totalDistance);
+            document.getElementById('waypointCount').textContent = waypointCount + '개';
 
             // 경유지 목록 표시
             const waypointList = document.getElementById('waypointList');
             waypointList.innerHTML = '';
 
             // 출발지
-            const startDiv = document.createElement('div');
-            startDiv.className = 'waypoint-item start-point';
-            startDiv.textContent = `🏁 ${data.start_point.name}`;
-            waypointList.appendChild(startDiv);
+            if (data.start_point && data.start_point.name) {
+                const startDiv = document.createElement('div');
+                startDiv.className = 'waypoint-item start-point';
+                startDiv.textContent = `🏁 ${data.start_point.name}`;
+                waypointList.appendChild(startDiv);
+            }
 
             // 경유지들
-            if (data.waypoints && data.waypoints.length > 0) {
+            if (data.waypoints && Array.isArray(data.waypoints) && data.waypoints.length > 0) {
                 data.waypoints.forEach((waypoint, index) => {
-                    const waypointDiv = document.createElement('div');
-                    waypointDiv.className = 'waypoint-item waypoint';
-                    waypointDiv.textContent = `📍 ${waypoint.name}`;
-                    waypointList.appendChild(waypointDiv);
+                    if (waypoint && waypoint.name) {
+                        const waypointDiv = document.createElement('div');
+                        waypointDiv.className = 'waypoint-item waypoint';
+                        waypointDiv.textContent = `📍 ${waypoint.name}`;
+                        waypointList.appendChild(waypointDiv);
+                    }
                 });
             }
 
             // 도착지
-            const endDiv = document.createElement('div');
-            endDiv.className = 'waypoint-item end-point';
-            endDiv.textContent = `🏆 ${data.end_point.name}`;
-            waypointList.appendChild(endDiv);
+            if (data.end_point && data.end_point.name) {
+                const endDiv = document.createElement('div');
+                endDiv.className = 'waypoint-item end-point';
+                endDiv.textContent = `🏆 ${data.end_point.name}`;
+                waypointList.appendChild(endDiv);
+            }
+            
+            // 코스 설명도 업데이트
+            if (data.description) {
+                const header = document.querySelector('.header h1');
+                header.innerHTML = `🏃‍♂️ 러닝 코스<br><small style="font-size:14px;opacity:0.9;">${data.description}</small>`;
+            }
         }
 
         function calculateEstimatedTime(distance) {
-            if (!distance) return '계산 중...';
-            const km = parseFloat(distance.replace('km', ''));
-            const minutes = Math.round(km * 6); // 1km당 약 6분 가정
-            return `약 ${minutes}분`;
+            if (!distance || distance === '정보 없음') return '계산 불가';
+            
+            // 다양한 거리 표현 처리
+            let km = 0;
+            if (typeof distance === 'string') {
+                // "3.0km", "약 3.0km", "3km" 등 처리
+                const match = distance.match(/(\d+\.?\d*)/);
+                if (match) {
+                    km = parseFloat(match[1]);
+                } else {
+                    return '계산 불가';
+                }
+            } else if (typeof distance === 'number') {
+                km = distance;
+            } else {
+                return '계산 불가';
+            }
+            
+            // 1km당 약 6-7분 가정 (일반적인 러닝 페이스)
+            const minutes = Math.round(km * 6.5);
+            const hours = Math.floor(minutes / 60);
+            const remainingMinutes = minutes % 60;
+            
+            if (hours > 0) {
+                return `약 ${hours}시간 ${remainingMinutes}분`;
+            } else {
+                return `약 ${minutes}분`;
+            }
         }
 
         // URL 파라미터로 데이터 받기 함수
