@@ -68,27 +68,6 @@
         .start-point { border-color: #28a745; background-color: #d4edda; }
         .end-point { border-color: #dc3545; background-color: #f8d7da; }
         .waypoint { border-color: #007bff; background-color: #d1ecf1; }
-        .controls {
-            padding: 20px;
-            text-align: center;
-            border-bottom: 1px solid #eee;
-        }
-        .btn {
-            background: #007bff;
-            color: white;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 5px;
-            margin: 0 5px;
-            cursor: pointer;
-            font-size: 14px;
-        }
-        .btn:hover {
-            background: #0056b3;
-        }
-        .btn.active {
-            background: #28a745;
-        }
     </style>
 </head>
 <body>
@@ -112,12 +91,6 @@
             </div>
         </div>
 
-        <div class="controls">
-            <button class="btn active" id="btnSimple" onclick="drawSimplePath()">간단한 경로</button>
-            <button class="btn" id="btnDetailed" onclick="drawDetailedPath()">상세한 경로</button>
-            <button class="btn" id="btnReset" onclick="resetMap()">지도 초기화</button>
-        </div>
-
         <div id="map"></div>
 
         <div class="waypoints">
@@ -128,73 +101,51 @@
 
     <script type="text/javascript" src="//dapi.kakao.com/v2/maps/sdk.js?appkey=7619d1b2f72d649526c966b68d0d4793&libraries=services"></script>
     <script>
-        let map;
+        // URL 파라미터에서 코스 데이터 가져오기 또는 하드코딩된 예시 데이터
         let courseData;
-        let currentPolylines = [];
-        let currentMarkers = [];
-
-        // 페이지 로드시 초기화
-        initializePage();
-
-        function initializePage() {
-            try {
-                courseData = getCourseData();
-                console.log('로드된 코스 데이터:', courseData);
-                
-                if (!courseData.start_point || !courseData.end_point) {
-                    throw new Error('필수 데이터가 누락되었습니다.');
-                }
-
-                initializeMap();
-                drawSimplePath();
-                updateCourseInfo();
-                
-            } catch (error) {
-                console.error('데이터 로드 실패:', error);
-                alert('코스 데이터를 불러올 수 없습니다. 예시 데이터로 표시합니다.');
-                courseData = getDefaultData();
-                initializeMap();
-                drawSimplePath();
-                updateCourseInfo();
+        
+        try {
+            courseData = getCourseData();
+            console.log('로드된 코스 데이터:', courseData);
+            
+            // 데이터 무결성 검사
+            if (!courseData.start_point || !courseData.end_point) {
+                throw new Error('필수 데이터가 누락되었습니다.');
             }
+        } catch (error) {
+            console.error('데이터 로드 실패:', error);
+            alert('코스 데이터를 불러올 수 없습니다. 예시 데이터로 표시합니다.');
+            courseData = getDefaultData();
         }
 
+        // 지도 초기화
+        const mapContainer = document.getElementById('map');
+        const mapOption = {
+            center: new kakao.maps.LatLng(courseData.start_point.lat, courseData.start_point.lng),
+            level: 5
+        };
+        const map = new kakao.maps.Map(mapContainer, mapOption);
+
+        // 마커와 경로 그리기
+        drawRunningCourseWithDirections(courseData);
+
         function getCourseData() {
+            // 디버깅 정보 출력
             console.log('현재 URL:', window.location.href);
             console.log('URL 검색 파라미터:', window.location.search);
             
+            // 먼저 URL 파라미터 확인
             const urlData = getUrlParams();
             console.log('URL에서 파싱한 데이터:', urlData);
             
             if (urlData && urlData.start_point) {
+                console.log('URL 데이터 사용');
                 return urlData;
             }
             
+            // URL 파라미터가 없으면 기본 데이터 사용
+            console.log('기본 데이터 사용');
             return getDefaultData();
-        }
-
-        function getUrlParams() {
-            try {
-                const urlParams = new URLSearchParams(window.location.search);
-                const courseDataParam = urlParams.get('course');
-                
-                console.log('Raw URL 파라미터:', courseDataParam);
-                
-                if (courseDataParam) {
-                    const decodedData = decodeURIComponent(courseDataParam);
-                    console.log('디코딩된 데이터:', decodedData);
-                    
-                    const parsedData = JSON.parse(decodedData);
-                    console.log('JSON 파싱 결과:', parsedData);
-                    
-                    if (parsedData && parsedData.start_point && parsedData.end_point) {
-                        return parsedData;
-                    }
-                }
-            } catch (e) {
-                console.error('파싱 실패:', e);
-            }
-            return null;
         }
 
         function getDefaultData() {
@@ -226,275 +177,293 @@
             };
         }
 
-        function initializeMap() {
-            const mapContainer = document.getElementById('map');
-            const mapOption = {
-                center: new kakao.maps.LatLng(courseData.start_point.lat, courseData.start_point.lng),
-                level: 5
-            };
-            map = new kakao.maps.Map(mapContainer, mapOption);
-        }
-
-        function drawSimplePath() {
-            setActiveButton('btnSimple');
-            clearMap();
-            
-            // 모든 지점을 순서대로 연결하는 간단한 경로
-            const path = [];
+        async function drawRunningCourseWithDirections(data) {
             const bounds = new kakao.maps.LatLngBounds();
-
-            // 출발지
-            const startPos = new kakao.maps.LatLng(courseData.start_point.lat, courseData.start_point.lng);
-            path.push(startPos);
-            bounds.extend(startPos);
-
-            // 경유지들
-            if (courseData.waypoints && courseData.waypoints.length > 0) {
-                courseData.waypoints.forEach(waypoint => {
-                    const pos = new kakao.maps.LatLng(waypoint.lat, waypoint.lng);
-                    path.push(pos);
-                    bounds.extend(pos);
-                });
-            }
-
-            // 도착지
-            const endPos = new kakao.maps.LatLng(courseData.end_point.lat, courseData.end_point.lng);
-            path.push(endPos);
-            bounds.extend(endPos);
-
-            // 경로선 그리기
-            const polyline = new kakao.maps.Polyline({
-                path: path,
-                strokeWeight: 5,
-                strokeColor: '#FF6B6B',
-                strokeOpacity: 0.8,
-                strokeStyle: 'solid'
-            });
-
-            polyline.setMap(map);
-            currentPolylines.push(polyline);
-
-            // 마커 표시
-            drawMarkers();
-
+            
+            // 먼저 정보 업데이트 (즉시 표시)
+            updateCourseInfo(data);
+            
+            // 마커들 표시
+            drawMarkers(data, bounds);
+            
+            // 실제 도보 경로 그리기
+            await drawWalkingRoute(data);
+            
             // 지도 범위 설정
             map.setBounds(bounds);
         }
 
-        function drawDetailedPath() {
-            setActiveButton('btnDetailed');
-            clearMap();
-            
-            // 더 상세한 경로 (중간 지점들 추가)
-            const allPoints = [courseData.start_point];
-            if (courseData.waypoints) {
-                allPoints.push(...courseData.waypoints);
-            }
-            allPoints.push(courseData.end_point);
-
-            const bounds = new kakao.maps.LatLngBounds();
-
-            // 각 구간을 더 부드럽게 연결
-            for (let i = 0; i < allPoints.length - 1; i++) {
-                const start = allPoints[i];
-                const end = allPoints[i + 1];
-                
-                // 중간점들을 생성해서 부드러운 경로 만들기
-                const detailedPath = createDetailedPath(start, end);
-                
-                detailedPath.forEach(point => {
-                    bounds.extend(point);
-                });
-
-                // 각 구간을 다른 색상으로 표시
-                const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7'];
-                const color = colors[i % colors.length];
-
-                const polyline = new kakao.maps.Polyline({
-                    path: detailedPath,
-                    strokeWeight: 4,
-                    strokeColor: color,
-                    strokeOpacity: 0.8,
-                    strokeStyle: 'solid'
-                });
-
-                polyline.setMap(map);
-                currentPolylines.push(polyline);
-            }
-
-            // 마커 표시
-            drawMarkers();
-
-            // 지도 범위 설정
-            map.setBounds(bounds);
-        }
-
-        function createDetailedPath(start, end) {
-            const path = [];
-            const steps = 15; // 중간 지점 개수
-
-            for (let i = 0; i <= steps; i++) {
-                const ratio = i / steps;
-                let lat = start.lat + (end.lat - start.lat) * ratio;
-                let lng = start.lng + (end.lng - start.lng) * ratio;
-
-                // 도로를 따라가는 것처럼 약간의 곡선 효과
-                const distance = Math.sqrt(
-                    Math.pow(end.lat - start.lat, 2) + Math.pow(end.lng - start.lng, 2)
-                );
-                
-                // 자연스러운 곡선 효과
-                const curve = Math.sin(ratio * Math.PI) * distance * 0.0003;
-                const zigzag = Math.sin(ratio * Math.PI * 4) * distance * 0.0001;
-                
-                lat += curve + zigzag;
-                lng += curve * 0.5;
-
-                path.push(new kakao.maps.LatLng(lat, lng));
-            }
-
-            return path;
-        }
-
-        function drawMarkers() {
+        function drawMarkers(data, bounds) {
             // 출발지 마커
             const startMarker = new kakao.maps.Marker({
-                position: new kakao.maps.LatLng(courseData.start_point.lat, courseData.start_point.lng),
-                map: map
+                position: new kakao.maps.LatLng(data.start_point.lat, data.start_point.lng),
+                map: map,
+                image: createMarkerImage('start')
             });
 
             const startInfowindow = new kakao.maps.InfoWindow({
-                content: `<div style="padding:5px;font-size:12px;"><strong>🏁 ${courseData.start_point.name}</strong></div>`
+                content: `<div style="padding:5px;font-size:12px;"><strong>🏁 출발: ${data.start_point.name}</strong></div>`
             });
 
             kakao.maps.event.addListener(startMarker, 'click', function() {
                 startInfowindow.open(map, startMarker);
             });
 
-            currentMarkers.push(startMarker);
+            bounds.extend(new kakao.maps.LatLng(data.start_point.lat, data.start_point.lng));
 
             // 경유지 마커들
-            if (courseData.waypoints && courseData.waypoints.length > 0) {
-                courseData.waypoints.forEach((waypoint, index) => {
+            if (data.waypoints && data.waypoints.length > 0) {
+                data.waypoints.forEach((waypoint, index) => {
                     const waypointMarker = new kakao.maps.Marker({
                         position: new kakao.maps.LatLng(waypoint.lat, waypoint.lng),
-                        map: map
+                        map: map,
+                        image: createMarkerImage('waypoint', index + 1)
                     });
 
                     const waypointInfowindow = new kakao.maps.InfoWindow({
-                        content: `<div style="padding:5px;font-size:12px;"><strong>📍 ${waypoint.name}</strong></div>`
+                        content: `<div style="padding:5px;font-size:12px;"><strong>📍 ${index + 1}: ${waypoint.name}</strong></div>`
                     });
 
                     kakao.maps.event.addListener(waypointMarker, 'click', function() {
                         waypointInfowindow.open(map, waypointMarker);
                     });
 
-                    currentMarkers.push(waypointMarker);
+                    bounds.extend(new kakao.maps.LatLng(waypoint.lat, waypoint.lng));
                 });
             }
 
             // 도착지 마커
             const endMarker = new kakao.maps.Marker({
-                position: new kakao.maps.LatLng(courseData.end_point.lat, courseData.end_point.lng),
-                map: map
+                position: new kakao.maps.LatLng(data.end_point.lat, data.end_point.lng),
+                map: map,
+                image: createMarkerImage('end')
             });
 
             const endInfowindow = new kakao.maps.InfoWindow({
-                content: `<div style="padding:5px;font-size:12px;"><strong>🏆 ${courseData.end_point.name}</strong></div>`
+                content: `<div style="padding:5px;font-size:12px;"><strong>🏆 도착: ${data.end_point.name}</strong></div>`
             });
 
             kakao.maps.event.addListener(endMarker, 'click', function() {
                 endInfowindow.open(map, endMarker);
             });
 
-            currentMarkers.push(endMarker);
+            bounds.extend(new kakao.maps.LatLng(data.end_point.lat, data.end_point.lng));
         }
 
-        function clearMap() {
-            // 기존 폴리라인 제거
-            currentPolylines.forEach(polyline => {
-                polyline.setMap(null);
-            });
-            currentPolylines = [];
+        async function drawWalkingRoute(data) {
+            // 모든 경유지를 포함한 전체 경로 생성
+            const allPoints = [data.start_point];
+            if (data.waypoints) {
+                allPoints.push(...data.waypoints);
+            }
+            allPoints.push(data.end_point);
 
-            // 기존 마커 제거
-            currentMarkers.forEach(marker => {
-                marker.setMap(null);
-            });
-            currentMarkers = [];
-        }
-
-        function resetMap() {
-            clearMap();
-            map.setCenter(new kakao.maps.LatLng(courseData.start_point.lat, courseData.start_point.lng));
-            map.setLevel(5);
-            setActiveButton('btnReset');
-            setTimeout(() => {
-                drawSimplePath();
-            }, 500);
-        }
-
-        function setActiveButton(activeId) {
-            const buttons = ['btnSimple', 'btnDetailed', 'btnReset'];
-            buttons.forEach(id => {
-                const btn = document.getElementById(id);
-                btn.classList.remove('active');
-                if (id === activeId) {
-                    btn.classList.add('active');
+            // 각 구간별로 도보 경로 요청
+            for (let i = 0; i < allPoints.length - 1; i++) {
+                const start = allPoints[i];
+                const end = allPoints[i + 1];
+                
+                try {
+                    const route = await getWalkingRoute(start, end);
+                    if (route) {
+                        drawRouteOnMap(route, i === 0 ? '#FF6B6B' : '#42A5F5');
+                    } else {
+                        // API 실패시 직선으로 연결
+                        drawStraightLine(start, end, '#FFA726');
+                    }
+                } catch (error) {
+                    console.error('경로 요청 실패:', error);
+                    // 실패시 직선으로 연결
+                    drawStraightLine(start, end, '#FFA726');
                 }
+                
+                // API 요청 제한을 위한 딜레이
+                await new Promise(resolve => setTimeout(resolve, 500));
+            }
+        }
+
+        function getWalkingRoute(start, end) {
+            return new Promise((resolve, reject) => {
+                // 카카오맵 길찾기 API는 웹에서 직접 호출이 제한적이므로
+                // 대안으로 직선 경로를 부드럽게 표시하거나
+                // 서버를 통해 경로 데이터를 받아오는 방식 사용
+                
+                // 임시로 곡선 경로 생성 (실제로는 도로를 따라가지 않음)
+                const points = createCurvedPath(start, end);
+                resolve(points);
             });
         }
 
-        function updateCourseInfo() {
-            console.log('updateCourseInfo 호출됨');
+        function createCurvedPath(start, end) {
+            // 시작점과 끝점 사이에 중간 지점들을 생성해서 부드러운 경로 만들기
+            const points = [];
+            const steps = 20; // 중간점 개수
             
-            const totalDistance = courseData.total_distance || courseData.distance || '정보 없음';
-            const waypointCount = (courseData.waypoints && Array.isArray(courseData.waypoints)) ? courseData.waypoints.length : 0;
+            for (let i = 0; i <= steps; i++) {
+                const ratio = i / steps;
+                const lat = start.lat + (end.lat - start.lat) * ratio;
+                const lng = start.lng + (end.lng - start.lng) * ratio;
+                
+                // 약간의 곡선 효과 추가 (선택사항)
+                const curveFactor = Math.sin(ratio * Math.PI) * 0.001;
+                
+                points.push(new kakao.maps.LatLng(lat + curveFactor, lng + curveFactor));
+            }
+            
+            return points;
+        }
+
+        function drawRouteOnMap(points, color) {
+            const polyline = new kakao.maps.Polyline({
+                path: points,
+                strokeWeight: 4,
+                strokeColor: color,
+                strokeOpacity: 0.8,
+                strokeStyle: 'solid'
+            });
+
+            polyline.setMap(map);
+        }
+
+        function drawStraightLine(start, end, color) {
+            const path = [
+                new kakao.maps.LatLng(start.lat, start.lng),
+                new kakao.maps.LatLng(end.lat, end.lng)
+            ];
+            
+            const polyline = new kakao.maps.Polyline({
+                path: path,
+                strokeWeight: 3,
+                strokeColor: color,
+                strokeOpacity: 0.6,
+                strokeStyle: 'dashed'
+            });
+
+            polyline.setMap(map);
+        }
+
+        function createMarkerImage(type, number) {
+            let imageSrc, imageSize, imageOption;
+            
+            // btoa 오류 해결: 한글 없는 간단한 마커 사용
+            switch(type) {
+                case 'start':
+                    // 녹색 원형 마커
+                    imageSrc = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(`
+                        <svg xmlns="http://www.w3.org/2000/svg" width="30" height="30" viewBox="0 0 30 30">
+                            <circle cx="15" cy="15" r="12" fill="#28a745" stroke="white" stroke-width="2"/>
+                            <circle cx="15" cy="15" r="4" fill="white"/>
+                        </svg>
+                    `);
+                    imageSize = new kakao.maps.Size(30, 30);
+                    imageOption = { offset: new kakao.maps.Point(15, 15) };
+                    break;
+                case 'end':
+                    // 빨간색 원형 마커
+                    imageSrc = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(`
+                        <svg xmlns="http://www.w3.org/2000/svg" width="30" height="30" viewBox="0 0 30 30">
+                            <circle cx="15" cy="15" r="12" fill="#dc3545" stroke="white" stroke-width="2"/>
+                            <circle cx="15" cy="15" r="4" fill="white"/>
+                        </svg>
+                    `);
+                    imageSize = new kakao.maps.Size(30, 30);
+                    imageOption = { offset: new kakao.maps.Point(15, 15) };
+                    break;
+                case 'waypoint':
+                    // 파란색 숫자 마커
+                    imageSrc = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(`
+                        <svg xmlns="http://www.w3.org/2000/svg" width="25" height="25" viewBox="0 0 25 25">
+                            <circle cx="12.5" cy="12.5" r="10" fill="#007bff" stroke="white" stroke-width="2"/>
+                            <text x="12.5" y="17" text-anchor="middle" fill="white" font-size="12" font-weight="bold">${number}</text>
+                        </svg>
+                    `);
+                    imageSize = new kakao.maps.Size(25, 25);
+                    imageOption = { offset: new kakao.maps.Point(12.5, 12.5) };
+                    break;
+                default:
+                    return null;
+            }
+            
+            return new kakao.maps.MarkerImage(imageSrc, imageSize, imageOption);
+        }
+
+        function updateCourseInfo(data) {
+            console.log('updateCourseInfo 호출됨, 데이터:', data);
+            
+            // 안전한 데이터 접근
+            const totalDistance = data.total_distance || data.distance || '정보 없음';
+            const waypointCount = (data.waypoints && Array.isArray(data.waypoints)) ? data.waypoints.length : 0;
             
             console.log('총 거리:', totalDistance);
             console.log('경유지 수:', waypointCount);
             
-            document.getElementById('totalDistance').textContent = totalDistance;
-            document.getElementById('estimatedTime').textContent = calculateEstimatedTime(totalDistance);
-            document.getElementById('waypointCount').textContent = waypointCount + '개';
+            // DOM 요소들이 존재하는지 확인
+            const distanceEl = document.getElementById('totalDistance');
+            const timeEl = document.getElementById('estimatedTime');
+            const countEl = document.getElementById('waypointCount');
+            
+            if (distanceEl) {
+                distanceEl.textContent = totalDistance;
+                console.log('거리 업데이트 완료');
+            } else {
+                console.error('totalDistance 요소를 찾을 수 없음');
+            }
+            
+            if (timeEl) {
+                timeEl.textContent = calculateEstimatedTime(totalDistance);
+                console.log('시간 업데이트 완료');
+            } else {
+                console.error('estimatedTime 요소를 찾을 수 없음');
+            }
+            
+            if (countEl) {
+                countEl.textContent = waypointCount + '개';
+                console.log('경유지 수 업데이트 완료');
+            } else {
+                console.error('waypointCount 요소를 찾을 수 없음');
+            }
 
             // 경유지 목록 표시
             const waypointList = document.getElementById('waypointList');
-            waypointList.innerHTML = '';
+            if (waypointList) {
+                waypointList.innerHTML = '';
 
-            // 출발지
-            if (courseData.start_point && courseData.start_point.name) {
-                const startDiv = document.createElement('div');
-                startDiv.className = 'waypoint-item start-point';
-                startDiv.textContent = `🏁 ${courseData.start_point.name}`;
-                waypointList.appendChild(startDiv);
-            }
+                // 출발지
+                if (data.start_point && data.start_point.name) {
+                    const startDiv = document.createElement('div');
+                    startDiv.className = 'waypoint-item start-point';
+                    startDiv.textContent = `🏁 ${data.start_point.name}`;
+                    waypointList.appendChild(startDiv);
+                }
 
-            // 경유지들
-            if (courseData.waypoints && Array.isArray(courseData.waypoints) && courseData.waypoints.length > 0) {
-                courseData.waypoints.forEach((waypoint, index) => {
-                    if (waypoint && waypoint.name) {
-                        const waypointDiv = document.createElement('div');
-                        waypointDiv.className = 'waypoint-item waypoint';
-                        waypointDiv.textContent = `📍 ${waypoint.name}`;
-                        waypointList.appendChild(waypointDiv);
-                    }
-                });
-            }
+                // 경유지들
+                if (data.waypoints && Array.isArray(data.waypoints) && data.waypoints.length > 0) {
+                    data.waypoints.forEach((waypoint, index) => {
+                        if (waypoint && waypoint.name) {
+                            const waypointDiv = document.createElement('div');
+                            waypointDiv.className = 'waypoint-item waypoint';
+                            waypointDiv.textContent = `📍 ${waypoint.name}`;
+                            waypointList.appendChild(waypointDiv);
+                        }
+                    });
+                }
 
-            // 도착지
-            if (courseData.end_point && courseData.end_point.name) {
-                const endDiv = document.createElement('div');
-                endDiv.className = 'waypoint-item end-point';
-                endDiv.textContent = `🏆 ${courseData.end_point.name}`;
-                waypointList.appendChild(endDiv);
+                // 도착지
+                if (data.end_point && data.end_point.name) {
+                    const endDiv = document.createElement('div');
+                    endDiv.className = 'waypoint-item end-point';
+                    endDiv.textContent = `🏆 ${data.end_point.name}`;
+                    waypointList.appendChild(endDiv);
+                }
+                
+                console.log('경유지 목록 업데이트 완료');
             }
             
             // 코스 설명도 업데이트
-            if (courseData.description) {
+            if (data.description) {
                 const header = document.querySelector('.header h1');
                 if (header) {
-                    header.innerHTML = `🏃‍♂️ 러닝 코스<br><small style="font-size:14px;opacity:0.9;">${courseData.description}</small>`;
+                    header.innerHTML = `🏃‍♂️ 러닝 코스<br><small style="font-size:14px;opacity:0.9;">${data.description}</small>`;
                 }
             }
         }
@@ -502,8 +471,10 @@
         function calculateEstimatedTime(distance) {
             if (!distance || distance === '정보 없음') return '계산 불가';
             
+            // 다양한 거리 표현 처리
             let km = 0;
             if (typeof distance === 'string') {
+                // "3.0km", "약 3.0km", "3km" 등 처리
                 const match = distance.match(/(\d+\.?\d*)/);
                 if (match) {
                     km = parseFloat(match[1]);
@@ -516,6 +487,7 @@
                 return '계산 불가';
             }
             
+            // 1km당 약 6-7분 가정 (일반적인 러닝 페이스)
             const minutes = Math.round(km * 6.5);
             const hours = Math.floor(minutes / 60);
             const remainingMinutes = minutes % 60;
@@ -525,6 +497,36 @@
             } else {
                 return `약 ${minutes}분`;
             }
+        }
+
+        function getUrlParams() {
+            try {
+                const urlParams = new URLSearchParams(window.location.search);
+                const courseData = urlParams.get('course');
+                
+                console.log('Raw URL 파라미터 (course):', courseData);
+                
+                if (courseData) {
+                    const decodedData = decodeURIComponent(courseData);
+                    console.log('디코딩된 데이터:', decodedData);
+                    
+                    const parsedData = JSON.parse(decodedData);
+                    console.log('JSON 파싱 결과:', parsedData);
+                    
+                    // 데이터 유효성 검사
+                    if (parsedData && parsedData.start_point && parsedData.end_point) {
+                        console.log('✅ 유효한 데이터입니다');
+                        return parsedData;
+                    } else {
+                        console.log('❌ 필수 필드가 없습니다');
+                    }
+                } else {
+                    console.log('❌ course 파라미터가 없습니다');
+                }
+            } catch (e) {
+                console.error('❌ 파싱 실패:', e);
+            }
+            return null;
         }
     </script>
 </body>
